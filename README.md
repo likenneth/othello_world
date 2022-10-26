@@ -1,6 +1,6 @@
 # Othello World
 
-This repository provides the code for training, probing and intervening Othello-GPT.  
+This repository provides the code for training, probing and intervening the Othello-GPT in [this paper](https://arxiv.org/abs/2210.13382).  
 The implementation is based on [minGPT](https://github.com/karpathy/minGPT), thanks to Andrej Karpathy.
 
 ## Table of Contents
@@ -44,5 +44,11 @@ See `intervening_probe_interact_column.ipynb` for the intervention experiment, w
 See `plot_attribution_via_intervention_othello.ipynb` for the attribution via intervention experiment, where we can also customize (1) which model to intervene on, (2) the pre-intervention board state (3) which square(s) to attribute.
 
 ## How to Cite
-
-Coming soon
+```
+@article{li2022emergent,
+  title={Emergent world representations: Exploring a sequence model trained on a synthetic task},
+  author={Li, Kenneth and Hopkins, Aspen K and Bau, David and Vi{\'e}gas, Fernanda and Pfister, Hanspeter and Wattenberg, Martin},
+  journal={arXiv preprint arXiv:2210.13382},
+  year={2022}
+}
+```
