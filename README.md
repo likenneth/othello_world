@@ -1,6 +1,6 @@
 # Othello World
 
-This repository provides the code for training, probing and intervening the Othello-GPT in [this paper](https://arxiv.org/abs/2210.13382).  
+This repository provides the code for training, probing and intervening the Othello-GPT in [this paper](https://arxiv.org/abs/2210.13382), to be present at ICLR 2023.  
 The implementation is based on [minGPT](https://github.com/karpathy/minGPT), thanks to Andrej Karpathy.
 
 ## Table of Contents
@@ -45,10 +45,12 @@ See `plot_attribution_via_intervention_othello.ipynb` for the attribution via in
 
 ## How to Cite
 ```
-@article{li2022emergent,
-  title={Emergent world representations: Exploring a sequence model trained on a synthetic task},
-  author={Li, Kenneth and Hopkins, Aspen K and Bau, David and Vi{\'e}gas, Fernanda and Pfister, Hanspeter and Wattenberg, Martin},
-  journal={arXiv preprint arXiv:2210.13382},
-  year={2022}
+@inproceedings{
+li2023emergent,
+title={Emergent World Representations: Exploring a Sequence Model Trained on a Synthetic Task},
+author={Kenneth Li and Aspen K Hopkins and David Bau and Fernanda Vi{\'e}gas and Hanspeter Pfister and Martin Wattenberg},
+booktitle={The Eleventh International Conference on Learning Representations },
+year={2023},
+url={https://openreview.net/forum?id=DeG07_TcZvT}
 }
 ```
