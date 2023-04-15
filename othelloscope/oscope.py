@@ -80,7 +80,7 @@ def generate_neuron_path(layer, neuron):
     return "othelloscope/L{}/N{}".format(layer, neuron)
 
 
-def generate_activation_table(layer, neuron):
+def generate_activation_table(heatmap):
     """Generate an activation table.
 
     Parameters
@@ -95,22 +95,27 @@ def generate_activation_table(layer, neuron):
     str
         The generated activation table.
     """
-    # Get the path to the neuron
-    path = generate_neuron_path(layer, neuron)
-
-    # Read the activation file
-    activation = np.load("{}/activation.npy".format(path))
+    # Convert heatmap to numpy array
+    heatmap = np.array(heatmap[0].detach().cpu())
+    othello_board = np.array(
+        [
+            ["A", "B", "C", "D", "E", "F", "G", "H"],
+            ["1", "2", "3", "4", "5", "6", "7", "8"],
+        ]
+    )
 
     # Create a table
     table = "<table>"
 
     # Loop through the rows
-    for row in range(activation.shape[0]):
+    for row in range(heatmap.shape[0]):
         table += "<tr>"
 
         # Loop through the columns
-        for col in range(activation.shape[1]):
-            table += "<td>{}</td>".format(activation[row, col])
+        for col in range(heatmap.shape[1]):
+            table += "<td title={0}>{1}</td>".format(
+                heatmap[row, col], othello_board[0, row] + othello_board[1, col]
+            )
 
         table += "</tr>"
 
@@ -169,6 +174,86 @@ def state_stack_to_one_hot(state_stack):
     return one_hot
 
 
+def neuron_probe(model, layer, neuron):
+    neuron = neuron.item()
+    w_out = model.blocks[layer].mlp.W_out[neuron, :].detach()
+    w_out /= w_out.norm()
+    return w_out
+
+
+def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_normalised):
+    """Generate a layer probe, all the heatmaps, and the page.
+
+    Parameters
+    ----------
+    model : HookedTransformer
+        The model.
+    layer : int
+        The layer to generate the probe for.
+    focus_cache : dict
+        The focus cache.
+    blank_probe_normalised : torch.Tensor
+        The normalised blank probe.
+    my_probe_normalised : torch.Tensor
+        The normalised my probe.
+
+    Returns
+    -------
+    None
+    """
+
+    neurons = (
+        focus_cache["post", layer][:, 3:-3].std(dim=[0, 1]).argsort(descending=True)
+    )
+    heatmaps_blank = []
+    heatmaps_my = []
+    for idx, neuron in enumerate(neurons):
+        w_out = neuron_probe(model, layer, neuron)
+        heatmaps_blank.append(
+            (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
+        )
+        heatmaps_my.append((w_out[:, None, None] * my_probe_normalised).sum(dim=0))
+        generate_page(layer, idx, heatmaps_blank, heatmaps_my)
+
+
+def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
+    """Generate a page."""
+
+    # Get the path to the neuron
+    path = generate_neuron_path(layer, neuron)
+
+    # Create a folder if it doesn't exist
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # Read the template file
+    template = generate_from_template(
+        "othelloscope/template.html",
+        (
+            f"<a href='../../L{layer}/N{neuron - 1}'>Previous neuron</a> - "
+            if neuron > 0
+            else (
+                f"<a href='../../L{layer-1}/N{2047}'>Previous layer</a> - "
+                if layer > 0
+                else ""
+            )
+        )
+        + (
+            f"<a href='../../L{layer}/N{neuron + 1}'>Next</a>"
+            if neuron < 2047
+            else (f"<a href='../../L{layer+1}/N0'>Next layer</a>" if layer < 7 else "")
+        ),
+        layer,
+        neuron,
+        generate_activation_table(heatmaps_blank),
+        generate_activation_table(heatmaps_my),
+    )
+
+    # Write the generated file
+    with open(path + "/index.html", "w") as f:
+        f.write(template)
+
+
 def main():
     """Main function."""
 
@@ -188,143 +273,7 @@ def main():
     sd = utils.download_file_from_hf(
         "NeelNanda/Othello-GPT-Transformer-Lens", "synthetic_model.pth"
     )
-    # champion_ship_sd = utils.download_file_from_hf("NeelNanda/Othello-GPT-Transformer-Lens", "championship_model.pth")
     model.load_state_dict(sd)
-
-    # An example input
-    sample_input = torch.tensor(
-        [
-            [
-                20,
-                19,
-                18,
-                10,
-                2,
-                1,
-                27,
-                3,
-                41,
-                42,
-                34,
-                12,
-                4,
-                40,
-                11,
-                29,
-                43,
-                13,
-                48,
-                56,
-                33,
-                39,
-                22,
-                44,
-                24,
-                5,
-                46,
-                6,
-                32,
-                36,
-                51,
-                58,
-                52,
-                60,
-                21,
-                53,
-                26,
-                31,
-                37,
-                9,
-                25,
-                38,
-                23,
-                50,
-                45,
-                17,
-                47,
-                28,
-                35,
-                30,
-                54,
-                16,
-                59,
-                49,
-                57,
-                14,
-                15,
-                55,
-                7,
-            ]
-        ]
-    )
-    # The argmax of the output (ie the most likely next move from each position)
-    sample_output = torch.tensor(
-        [
-            [
-                21,
-                41,
-                40,
-                34,
-                40,
-                41,
-                3,
-                11,
-                21,
-                43,
-                40,
-                21,
-                28,
-                50,
-                33,
-                50,
-                33,
-                5,
-                33,
-                5,
-                52,
-                46,
-                14,
-                46,
-                14,
-                47,
-                38,
-                57,
-                36,
-                50,
-                38,
-                15,
-                28,
-                26,
-                28,
-                59,
-                50,
-                28,
-                14,
-                28,
-                28,
-                28,
-                28,
-                45,
-                28,
-                35,
-                15,
-                14,
-                30,
-                59,
-                49,
-                59,
-                15,
-                15,
-                14,
-                15,
-                8,
-                7,
-                8,
-            ]
-        ]
-    )
-    model(sample_input).argmax(dim=-1)
-    print(sample_output)
 
     OTHELLO_ROOT = Path(".")
     # Import othello util functions from file mechanistic_interpretability/mech_interp_othello_utils.py
@@ -353,68 +302,7 @@ def main():
     )
     print("Length of game:", length_of_game)
 
-    stoi_indices = [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        24,
-        25,
-        26,
-        29,
-        30,
-        31,
-        32,
-        33,
-        34,
-        37,
-        38,
-        39,
-        40,
-        41,
-        42,
-        43,
-        44,
-        45,
-        46,
-        47,
-        48,
-        49,
-        50,
-        51,
-        52,
-        53,
-        54,
-        55,
-        56,
-        57,
-        58,
-        59,
-        60,
-        61,
-        62,
-        63,
-    ]
+    stoi_indices = list(range(0, 64))
     alpha = "ABCDEFGH"
 
     def to_board_label(i):
@@ -426,8 +314,6 @@ def main():
 
     # This is implicitly converted to a batch of size 1
     logits = model(moves_int)
-    print("logits:", logits.shape)
-
     logit_vec = logits[0, -1]
     log_probs = logit_vec.log_softmax(-1)
     # Remove passing
@@ -549,6 +435,83 @@ def main():
     state = torch.zeros((64,), dtype=torch.float32, device="cpu") - 10.0
     state[stoi_indices] = focus_logits[game_index, pos].log_softmax(dim=-1)[1:]
     print("state:", state.shape)
+
+    # imshow(
+    #     [
+    #         (
+    #             focus_cache["attn_out", l][game_index, move][:, None, None] * my_probe
+    #         ).sum(0)
+    #         for l in range(layer + 1)
+    #     ],
+    #     facet_col=0,
+    #     y=[i for i in "ABCDEFGH"],
+    #     facet_name="Layer",
+    #     title=f"Attention Layer Contributions to my vs their (Game {game_index} Move {move})",
+    #     aspect="equal",
+    # )
+    # imshow(
+    #     [
+    #         (focus_cache["mlp_out", l][game_index, move][:, None, None] * my_probe).sum(
+    #             0
+    #         )
+    #         for l in range(layer + 1)
+    #     ],
+    #     facet_col=0,
+    #     y=[i for i in "ABCDEFGH"],
+    #     facet_name="Layer",
+    #     title=f"MLP Layer Contributions to my vs their (Game {game_index} Move {move})",
+    #     aspect="equal",
+    # )
+
+    print("\nACTIVATE NEURON REPRESENTATION\n")
+    # Scale the probes down to be unit norm per cell
+    blank_probe_normalised = blank_probe / blank_probe.norm(dim=0, keepdim=True)
+    my_probe_normalised = my_probe / my_probe.norm(dim=0, keepdim=True)
+    # Set the center blank probes to 0, since they're never blank so the probe is meaningless
+    blank_probe_normalised[:, [3, 3, 4, 4], [3, 4, 3, 4]] = 0.0
+
+    layer = 5
+    neuron = 1393
+    w_in = model.blocks[layer].mlp.W_in[:, neuron].detach()
+    w_in /= w_in.norm()
+    w_out = model.blocks[layer].mlp.W_out[neuron, :].detach()
+    w_out /= w_out.norm()
+    # imshow(
+    #     [
+    #         (w_in[:, None, None] * blank_probe_normalised).sum(dim=0),
+    #         (w_in[:, None, None] * my_probe_normalised).sum(dim=0),
+    #         # (w_out[:, None, None] * blank_probe_normalised).sum(dim=0),
+    #         # (w_out[:, None, None] * my_probe_normalised).sum(dim=0),
+    #     ],
+    #     facet_col=0,
+    #     y=[i for i in "ABCDEFGH"],
+    #     title=f"Input weights in terms of the probe for neuron L{layer}N{neuron}",
+    #     facet_labels=["Blank In", "My In"],
+    # )
+
+    U, S, Vh = torch.svd(
+        torch.cat(
+            [my_probe.reshape(cfg.d_model, 64), blank_probe.reshape(cfg.d_model, 64)],
+            dim=1,
+        )
+    )
+    # Remove the final four dimensions of U, as the 4 center cells are never blank and so the blank probe is meaningless there
+    probe_space_basis = U[:, :-4]
+
+    print(
+        "Fraction of input weights in probe basis:",
+        (w_in @ probe_space_basis).norm().item() ** 2,
+    )
+    print(
+        "Fraction of output weights in probe basis:",
+        (w_out @ probe_space_basis).norm().item() ** 2,
+    )
+
+    for layer in range(8):
+        print(f"Layer {layer} converted")
+        layer_probe(
+            model, layer, focus_cache, blank_probe_normalised, my_probe_normalised
+        )
 
 
 # Make an 8x8 html table from a numpy array
