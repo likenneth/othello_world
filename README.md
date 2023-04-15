@@ -4,7 +4,7 @@ Replicating [neuroscope](https://neuroscope.io) for OthelloGPT MLP neurons. Main
 
 - [x] Get OthelloGPT to work
 - [x] Get template files and HTML to work
-- [ ] Find out how to find the most activating dataset examples
+- [ ] Find out how to find the most activating dataset examples --> Use the linear probe
 - [ ] Figure out a good way to represent MLP neurons
 - [ ] Figure out a good way to differentiate polysemantic neurons from monosemantic neurons
 - [ ] Show a neuron's most activating examples
