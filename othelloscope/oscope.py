@@ -90,7 +90,7 @@ def generate_neuron_path(layer, neuron):
     return "othelloscope/L{}/N{}".format(layer, neuron)
 
 
-def generate_activation_table(heatmap):
+def generate_activation_table(heatmap: torch.Tensor) -> str:
     """Generate an activation table.
 
     Parameters
@@ -106,7 +106,7 @@ def generate_activation_table(heatmap):
         The generated activation table.
     """
     # Convert heatmap to numpy array
-    heatmap = np.array(heatmap[-1].detach().cpu())
+    heatmap = np.array(heatmap.detach().cpu())
     othello_board = np.array(
         [
             ["A", "B", "C", "D", "E", "F", "G", "H"],
@@ -218,22 +218,28 @@ def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_norm
         .std(dim=[0, 1])
         .argsort(descending=True)
     )
-    heatmaps_blank = []
-    heatmaps_my = []
-    for idx, neuron in enumerate(neurons):
-        w_out = neuron_probe(model, layer, neuron)
-        heatmaps_blank.append(
-            (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
-        )
-        heatmaps_my.append((w_out[:, None, None] * my_probe_normalised).sum(dim=0))
-        generate_page(layer, idx, heatmaps_blank, heatmaps_my)
+
+    w_outs = [neuron_probe(model, layer, neuron) for neuron in neurons]
+    heatmaps_blank = [
+        (w_out[:, None, None] * blank_probe_normalised).sum(dim=0) for w_out in w_outs
+    ]
+    heatmaps_my = [
+        (w_out[:, None, None] * my_probe_normalised).sum(dim=0) for w_out in w_outs
+    ]
+
+    for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
+    ):
+        generate_page(layer, neuron_index, heatmap_blank, heatmap_my)
 
 
-def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
+def generate_page(
+    layer, neuron_index: int, heatmap_blank: torch.Tensor, heatmap_my: torch.Tensor
+):
     """Generate a page."""
 
     # Get the path to the neuron
-    path = generate_neuron_path(layer, neuron)
+    path = generate_neuron_path(layer, neuron_index)
 
     # Create a folder if it doesn't exist
     if not os.path.exists(path):
@@ -243,8 +249,8 @@ def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
     template = generate_from_template(
         "othelloscope/template.html",
         (
-            f"<a href='../../L{layer}/N{neuron - 1}/index.html'>Previous neuron</a> - "
-            if neuron > 0
+            f"<a href='../../L{layer}/N{neuron_index - 1}/index.html'>Previous neuron</a> - "
+            if neuron_index > 0
             else (
                 f"<a href='../../L{layer-1}/N{2047}'>Previous layer</a> - "
                 if layer > 0
@@ -252,14 +258,14 @@ def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
             )
         )
         + (
-            f"<a href='../../L{layer}/N{neuron + 1}/index.html'>Next</a>"
-            if neuron < 2047
+            f"<a href='../../L{layer}/N{neuron_index + 1}/index.html'>Next</a>"
+            if neuron_index < 2047
             else (f"<a href='../../L{layer+1}/N0'>Next layer</a>" if layer < 7 else "")
         ),
         layer,
-        neuron,
-        generate_activation_table(heatmaps_blank),
-        generate_activation_table(heatmaps_my),
+        neuron_index,
+        generate_activation_table(heatmap_blank),
+        generate_activation_table(heatmap_my),
     )
 
     # Write the generated file
