@@ -302,7 +302,7 @@ def main():
     )
     print("Length of game:", length_of_game)
 
-    stoi_indices = list(range(0, 64))
+    stoi_indices = list(range(0, 60))
     alpha = "ABCDEFGH"
 
     def to_board_label(i):
@@ -314,6 +314,8 @@ def main():
 
     # This is implicitly converted to a batch of size 1
     logits = model(moves_int)
+    print("logits:", logits.shape)
+
     logit_vec = logits[0, -1]
     log_probs = logit_vec.log_softmax(-1)
     # Remove passing
@@ -436,33 +438,6 @@ def main():
     state[stoi_indices] = focus_logits[game_index, pos].log_softmax(dim=-1)[1:]
     print("state:", state.shape)
 
-    # imshow(
-    #     [
-    #         (
-    #             focus_cache["attn_out", l][game_index, move][:, None, None] * my_probe
-    #         ).sum(0)
-    #         for l in range(layer + 1)
-    #     ],
-    #     facet_col=0,
-    #     y=[i for i in "ABCDEFGH"],
-    #     facet_name="Layer",
-    #     title=f"Attention Layer Contributions to my vs their (Game {game_index} Move {move})",
-    #     aspect="equal",
-    # )
-    # imshow(
-    #     [
-    #         (focus_cache["mlp_out", l][game_index, move][:, None, None] * my_probe).sum(
-    #             0
-    #         )
-    #         for l in range(layer + 1)
-    #     ],
-    #     facet_col=0,
-    #     y=[i for i in "ABCDEFGH"],
-    #     facet_name="Layer",
-    #     title=f"MLP Layer Contributions to my vs their (Game {game_index} Move {move})",
-    #     aspect="equal",
-    # )
-
     print("\nACTIVATE NEURON REPRESENTATION\n")
     # Scale the probes down to be unit norm per cell
     blank_probe_normalised = blank_probe / blank_probe.norm(dim=0, keepdim=True)
@@ -476,18 +451,6 @@ def main():
     w_in /= w_in.norm()
     w_out = model.blocks[layer].mlp.W_out[neuron, :].detach()
     w_out /= w_out.norm()
-    # imshow(
-    #     [
-    #         (w_in[:, None, None] * blank_probe_normalised).sum(dim=0),
-    #         (w_in[:, None, None] * my_probe_normalised).sum(dim=0),
-    #         # (w_out[:, None, None] * blank_probe_normalised).sum(dim=0),
-    #         # (w_out[:, None, None] * my_probe_normalised).sum(dim=0),
-    #     ],
-    #     facet_col=0,
-    #     y=[i for i in "ABCDEFGH"],
-    #     title=f"Input weights in terms of the probe for neuron L{layer}N{neuron}",
-    #     facet_labels=["Blank In", "My In"],
-    # )
 
     U, S, Vh = torch.svd(
         torch.cat(
