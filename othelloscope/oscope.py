@@ -557,8 +557,36 @@ def main():
         model, 8, focus_cache, blank_probe_normalised, my_probe_normalised
     )
 
+    # Calculate heatmap standard deviations
     heatmaps_blank_sd = calculate_heatmap_standard_deviations(heatmaps_blank)
     heatmaps_my_sd = calculate_heatmap_standard_deviations(heatmaps_my)
+
+    assert heatmaps_blank.shape == heatmaps_my.shape
+
+    print("sd shape: " + str(heatmaps_blank_sd.shape))
+
+    heatmaps_blank_sd = heatmaps_blank_sd.cpu().numpy()
+    heatmaps_my_sd = heatmaps_my_sd.cpu().numpy()
+
+    # Sort neuron indices by standard deviation
+    sd_blank_sorted_neurons = []
+    sd_my_sorted_neurons = []
+    for layer_index, (heatmap_blank_sd, heatmap_my_sd) in enumerate(
+        zip(heatmaps_blank_sd, heatmaps_my_sd)
+    ):
+        neuron_indices_blank = list(range(8))
+        neuron_indices_blank.sort(
+            reverse=True,
+            key=lambda neuron_index: heatmap_blank_sd[neuron_index].item(),
+        )
+        sd_blank_sorted_neurons.append(neuron_indices_blank)
+
+        neuron_indices_my = list(range(8))
+        neuron_indices_my.sort(
+            reverse=True,
+            key=lambda neuron_index: heatmap_my_sd[neuron_index].item(),
+        )
+        sd_my_sorted_neurons.append(neuron_indices_my)
 
     # Generate file for each neuron.
     for layer_index, (
