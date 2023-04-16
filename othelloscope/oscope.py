@@ -266,11 +266,29 @@ def generate_page(
         neuron_index,
         generate_activation_table(heatmap_blank),
         generate_activation_table(heatmap_my),
+        tensor_variance(heatmap_blank),
+        tensor_variance(heatmap_my),
     )
 
     # Write the generated file
     with open(path + "/index.html", "w") as f:
         f.write(template)
+
+
+def tensor_variance(tensor: torch.Tensor) -> float:
+    """Calculate the variance of the values in the tensor.
+
+    Parameters
+    ----------
+    tensor : torch.Tensor
+        The tensor.
+
+    Returns
+    -------
+    float
+        The variance.
+    """
+    return torch.mean((tensor - torch.mean(tensor)) ** 2)
 
 
 def main():
