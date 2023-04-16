@@ -269,6 +269,7 @@ def generate_neuron_pages(
     for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
         zip(heatmaps_blank, heatmaps_my)
     ):
+        print(f"Generating pages for layer {layer_index}.")
         generate_neuron_pages_for_layer(
             layer_index,
             heatmaps_blank,
