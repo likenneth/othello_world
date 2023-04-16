@@ -23,6 +23,19 @@ torch.set_grad_enabled(False)
 
 import transformer_lens.utils as utils
 
+OTHELLO_ROOT = Path(".")
+# Import othello util functions from file mechanistic_interpretability/mech_interp_othello_utils.py
+sys.path.append(str(OTHELLO_ROOT))
+sys.path.append(str(OTHELLO_ROOT / "mechanistic_interpretability"))
+from mech_interp_othello_utils import (
+    plot_single_board,
+    to_string,
+    to_int,
+    int_to_label,
+    string_to_label,
+    OthelloBoardState,
+)
+
 USE_CUDA: bool = torch.cuda.is_available()
 DEVICE: str = "cuda" if USE_CUDA else "cpu"
 
@@ -54,24 +67,6 @@ def generate_from_template(template, *args):
     return template.format(*args)
 
 
-def get_neuron_at_layer(layer, neuron):
-    """Get the neuron at a specific layer.
-
-    Parameters
-    ----------
-    layer : int
-        The layer of the neuron.
-    neuron : int
-        The index of the neuron.
-
-    Returns
-    -------
-    str
-        The neuron at the layer.
-    """
-    return "layer_{}_neuron_{}".format(layer, neuron)
-
-
 def generate_neuron_path(layer, neuron):
     """Generate the path to the neuron.
 
@@ -87,7 +82,7 @@ def generate_neuron_path(layer, neuron):
     str
         The path to the neuron.
     """
-    return "othelloscope/L{}/N{}".format(layer, neuron)
+    return "othelloscope/L{0}/N{1}".format(layer, neuron)
 
 
 def generate_activation_table(heatmap):
@@ -192,7 +187,16 @@ def neuron_probe(model, layer, neuron):
     return w_out
 
 
-def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_normalised):
+def layer_probe(
+    model,
+    layer,
+    focus_cache,
+    blank_probe_normalised,
+    my_probe_normalised,
+    stoi_indices,
+    board_seqs_int,
+    board_seqs_string,
+):
     """Generate a layer probe, all the heatmaps, and the page.
 
     Parameters
@@ -207,6 +211,8 @@ def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_norm
         The normalised blank probe.
     my_probe_normalised : torch.Tensor
         The normalised my probe.
+    stoi_indices : range
+        The stoi indices.
 
     Returns
     -------
@@ -226,10 +232,17 @@ def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_norm
             (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
         )
         heatmaps_my.append((w_out[:, None, None] * my_probe_normalised).sum(dim=0))
-        generate_page(layer, idx, heatmaps_blank, heatmaps_my)
+        games = top_50_games(
+            layer, neuron, focus_cache, board_seqs_int, board_seqs_string
+        )
+        generate_page(
+            layer, idx, "TEST1", heatmaps_blank, heatmaps_my, games, model, stoi_indices
+        )
 
 
-def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
+def generate_page(
+    layer, neuron, rank, heatmaps_blank, heatmaps_my, games, model, stoi_indices
+):
     """Generate a page."""
 
     # Get the path to the neuron
@@ -258,13 +271,63 @@ def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
         ),
         layer,
         neuron,
+        rank,
         generate_activation_table(heatmaps_blank),
         generate_activation_table(heatmaps_my),
+        generate_logit_attribution_table(layer, neuron, model, stoi_indices),
+        games,
     )
 
     # Write the generated file
     with open(path + "/index.html", "w") as f:
         f.write(template)
+
+
+def top_50_games(layer, neuron, focus_cache, board_seqs_int, board_seqs_string):
+    """Takes top 50 games and visualizes them in a grid with visualization of the board state when hovering along with the neuron activation for that specific game."""
+    neuron_acts = focus_cache["post", layer, "mlp"][:, :, neuron]
+    num_games = 50
+    focus_games_int = board_seqs_int[:num_games]
+    focus_games_string = board_seqs_string[:num_games]
+
+    # Generate a table where y = game, x = move, and the value is the move from focus_games_string
+    moves = []
+    for game in focus_games_int:
+        moves.append([int_to_label(move) for move in game])
+
+    # Return HTML table with the title = activation of the neuron
+    # Create a table
+    table = "<table class='games'>"
+
+    # Loop through the rows
+    table += "<tr><td class='game_step_id'></td>"
+    for col in range(neuron_acts.shape[1] + 1):
+        table += "<td class='game_step_id'>{0}</td>".format(col + 1)
+    table += "</tr>"
+    for row in range(neuron_acts.shape[0]):
+        table += "<tr>"
+        table += "<td class='game_id'>{0}</td>".format(row + 1)
+
+        # Loop through the columns
+        for col in range(neuron_acts.shape[1]):
+            table += "<td class='game_step' title={0}>{1}</td>".format(
+                neuron_acts[row, col], moves[row][col]
+            )
+
+        table += "</tr>"
+
+    table += "</table>"
+
+    return table
+
+
+def generate_logit_attribution_table(layer, neuron, model, stoi_indices):
+    """Generate a logit attribution table."""
+    w_out = model.blocks[layer].mlp.W_out[neuron, :]
+    state = torch.zeros(8, 8, device="cpu")
+    state.flatten()[stoi_indices] = w_out @ model.W_U[:, 1:]
+    state.reshape(8, 8)
+    return generate_activation_table([state])
 
 
 def main():
@@ -287,19 +350,6 @@ def main():
         "NeelNanda/Othello-GPT-Transformer-Lens", "synthetic_model.pth"
     )
     model.load_state_dict(sd)
-
-    OTHELLO_ROOT = Path(".")
-    # Import othello util functions from file mechanistic_interpretability/mech_interp_othello_utils.py
-    sys.path.append(str(OTHELLO_ROOT))
-    sys.path.append(str(OTHELLO_ROOT / "mechanistic_interpretability"))
-    from mech_interp_othello_utils import (
-        plot_single_board,
-        to_string,
-        to_int,
-        int_to_label,
-        string_to_label,
-        OthelloBoardState,
-    )
 
     board_seqs_int = torch.tensor(
         np.load(OTHELLO_ROOT / "board_seqs_int_small.npy"), dtype=torch.long
@@ -491,6 +541,9 @@ def main():
             focus_cache,
             blank_probe_normalised,
             my_probe_normalised,
+            stoi_indices,
+            board_seqs_int,
+            board_seqs_string,
         )
 
 

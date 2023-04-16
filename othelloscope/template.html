@@ -2,12 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>OthelloScope</title>
+    <title>OthelloScope: Layer {1}, neuron {2}</title>
+    <!-- Description for link preview -->
+    <meta name="description" content="See the Layer {1}, neuron {2}. It is rank {3} in interestingness." />
+    <!-- Open Graph data -->
+    <meta property="og:title" content="OthelloScope: Layer {1}, neuron {2}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://othelloscope.com/L{1}/N{2}" />
+    <!-- <meta property="og:image" content="https://othelloscope.com/L{1}/N{2}/heatmap.png" /> -->
+    <meta property="og:description" content="See the Layer {1}, neuron {2}. It is rank {3} in interestingness." />
+    <meta property="og:site_name" content="OthelloScope" />
+
     <link rel="stylesheet" type="text/css" href="../../style.css"></style>
   </head>
   <body>
+    <a href="../../index.html">Back to index</a>
     <h1>Welcome to the OthelloScope!</h1>
-    {}
+    {0}
     <p>
       Investigate neurons in the MLP layers of the Othello-GPT model by
       visualizing the examples where neurons Based on the original idea of the
@@ -15,18 +26,26 @@
       Nanda. See the original model <a href="https://github.com/likenneth/othello_world">here</a>.
     </p>
 
-    <h2>Layer {}, neuron {}</h2>
+    <h2>Layer {1}, neuron {2}</h2>
     <!-- 8x8 table wrapper, the cells will be generated with code -->
     <div class="columns">
       <div class="column">
         <h3>Heatmap: My pieces</h3>
-        {}
+        {4}
       </div>
       <div class="column">
         <h3>Heatmap: Blank</h3>
-        {}
+        {5}
+      </div>
+      <div class="column">
+        <h3>Logit attribution</h3>
+        {6}
       </div>
     </div>
+    <h2>Activation in games</h2>
+    <p>Y = games, X = moves</p>
+    {7}
+
     <script src="../../script.js"></script>
   </body>
 </html>
