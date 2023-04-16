@@ -17,7 +17,7 @@ for (var i = 0, max = allTableCells.length; i < max; i++) {
   currentText = Number(currentText);
 
   // Remap currentText from [log(0), log(1)] to [0, 255]
-  var value = Math.round(255 * currentText * 10);
+  var value = currentText * 10;
 
   // Color on a spectrum between two defined colors
   let color_theirs = [255, 0, 0]; // Red #FF0000 rgb(255, 0, 0)
@@ -26,15 +26,16 @@ for (var i = 0, max = allTableCells.length; i < max; i++) {
 
   let color_interp = value > 0 ? color_ours : color_theirs;
   value = value > 0 ? value : -value;
+  value = value > 1 ? 1 : value;
 
   // Calculate the color at the current value with log transformation to make the color spectrum more visible
   var color =
     "rgb(" +
-    Math.round((value * (color_interp[0] - color_none[0])) / 255 + color_none[0]) +
+    Math.round((value * (color_interp[0] - color_none[0])) + color_none[0]) +
     "," +
-    Math.round((value * (color_interp[1] - color_none[1])) / 255 + color_none[1]) +
+    Math.round((value * (color_interp[1] - color_none[1])) + color_none[1]) +
     "," +
-    Math.round((value * (color_interp[2] - color_none[2])) / 255 + color_none[2]) +
+    Math.round((value * (color_interp[2] - color_none[2])) + color_none[2]) +
     ")";
 
   // Set the background color of the cell
