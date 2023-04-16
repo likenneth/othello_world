@@ -141,3 +141,7 @@ cython_debug/
 data/othello_synthetic
 data/othello_championship
 ckpts/*
+
+othelloscope/L*
+
+.vscode/
