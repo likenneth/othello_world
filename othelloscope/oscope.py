@@ -269,7 +269,6 @@ def generate_neuron_pages(
     for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
         zip(heatmaps_blank, heatmaps_my)
     ):
-        print(f"Generating pages for layer {layer_index}.")
         generate_neuron_pages_for_layer(
             layer_index,
             heatmaps_blank,
@@ -402,7 +401,7 @@ def top_50_games(layer, neuron, focus_cache, board_seqs_int):
 def generate_logit_attribution_table(layer, neuron, model, stoi_indices):
     """Generate a logit attribution table."""
     w_out = model.blocks[layer].mlp.W_out[neuron, :]
-    state = torch.zeros(8, 8, device="cpu")
+    state = torch.zeros(8, 8, device=DEVICE)
     state.flatten()[stoi_indices] = w_out @ model.W_U[:, 1:]
     state.reshape(8, 8)
     return generate_activation_table([state])
@@ -624,8 +623,8 @@ def main():
 
     print("sd shape: " + str(heatmaps_blank_sd.shape))
 
-    heatmaps_blank_sd = heatmaps_blank_sd.cpu().numpy()
-    heatmaps_my_sd = heatmaps_my_sd.cpu().numpy()
+    heatmaps_blank_sd = heatmaps_blank_sd.detach().cpu().numpy()
+    heatmaps_my_sd = heatmaps_my_sd.detach().cpu().numpy()
 
     # Sort neuron indices by standard deviation
     sd_blank_sorted_neurons = []
