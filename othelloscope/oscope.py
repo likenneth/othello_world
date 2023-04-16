@@ -96,7 +96,7 @@ def generate_activation_table(heatmap):
         The generated activation table.
     """
     # Convert heatmap to numpy array
-    heatmap = np.array(heatmap[0].detach().cpu())
+    heatmap = np.array(heatmap[-1].detach().cpu())
     othello_board = np.array(
         [
             ["A", "B", "C", "D", "E", "F", "G", "H"],
@@ -302,7 +302,7 @@ def main():
     )
     print("Length of game:", length_of_game)
 
-    stoi_indices = list(range(0, 64))
+    stoi_indices = list(range(0, 60))
     alpha = "ABCDEFGH"
 
     def to_board_label(i):
@@ -325,7 +325,7 @@ def main():
     temp_board_state -= 13.0
     temp_board_state[stoi_indices] = log_probs
     temp_board_state = temp_board_state.reshape(8, 8)
-    temp_board_state = temp_board_state.detach().numpy()
+    temp_board_state = temp_board_state.cpu().detach().numpy()
 
     print("temp_board_state:", temp_board_state.shape)
 
@@ -344,10 +344,10 @@ def main():
     print("focus states:", focus_states.shape)
     print("focus_valid_moves", focus_valid_moves.shape)
 
-    focus_logits, focus_cache = model.run_with_cache(focus_games_int[:, :-1].cpu())
+    focus_logits, focus_cache = model.run_with_cache(focus_games_int[:, :-1].cuda())
 
     full_linear_probe = torch.load(
-        OTHELLO_ROOT / "main_linear_probe.pth", map_location="cpu"
+        OTHELLO_ROOT / "main_linear_probe.pth", map_location="cuda"
     )
     rows = 8
 
@@ -358,7 +358,7 @@ def main():
     blank_index = 0
     their_index = 1
     my_index = 2
-    linear_probe = torch.zeros(cfg.d_model, rows, cols, options, device="cpu")
+    linear_probe = torch.zeros(cfg.d_model, rows, cols, options, device="cuda")
     linear_probe[..., blank_index] = 0.5 * (
         full_linear_probe[black_to_play_index, ..., 0]
         + full_linear_probe[white_to_play_index, ..., 0]
@@ -398,7 +398,7 @@ def main():
 
     # We now convert to one hot
     focus_states_flipped_one_hot = state_stack_to_one_hot(
-        torch.tensor(flipped_focus_states)
+        torch.tensor(flipped_focus_states).cuda()
     )
 
     # Take the argmax
@@ -411,13 +411,13 @@ def main():
     probe_out_value = probe_out.argmax(dim=-1)
 
     correct_middle_odd_answers = (
-        probe_out_value.cpu() == focus_states_flipped_value[:, :-1]
+        probe_out_value.cuda() == focus_states_flipped_value[:, :-1]
     )[:, 5:-5:2]
     accuracies_odd = einops.reduce(
         correct_middle_odd_answers.float(), "game move row col -> row col", "mean"
     )
     correct_middle_answers = (
-        probe_out_value.cpu() == focus_states_flipped_value[:, :-1]
+        probe_out_value.cuda() == focus_states_flipped_value[:, :-1]
     )[:, 5:-5]
     accuracies = einops.reduce(
         correct_middle_answers.float(), "game move row col -> row col", "mean"
@@ -432,7 +432,7 @@ def main():
     pos = 20
     game_index = 0
     moves = focus_games_string[game_index, : pos + 1]
-    state = torch.zeros((64,), dtype=torch.float32, device="cpu") - 10.0
+    state = torch.zeros((64,), dtype=torch.float32, device="cuda") - 10.0
     state[stoi_indices] = focus_logits[game_index, pos].log_softmax(dim=-1)[1:]
     print("state:", state.shape)
 
