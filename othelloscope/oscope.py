@@ -1,6 +1,7 @@
 # Import libraries for reading and writing files
 import os
 import sys
+from typing import Tuple
 
 # Import libraries for image processing
 import numpy as np
@@ -192,8 +193,51 @@ def neuron_probe(model, layer, neuron):
     return w_out
 
 
-def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_normalised):
-    """Generate a layer probe, all the heatmaps, and the page.
+def calculate_heatmaps(
+    model, num_layers: int, focus_cache, blank_probe_normalised, my_probe_normalised
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    layer_heatmaps_blank = []
+    layer_heatmaps_my = []
+    for layer in range(num_layers):
+        heatmaps_blank, heatmaps_my = calculate_heatmaps_for_layer(
+            model, layer, focus_cache, blank_probe_normalised, my_probe_normalised
+        )
+        layer_heatmaps_blank.append(heatmaps_blank)
+        layer_heatmaps_my.append(heatmaps_my)
+
+    return torch.stack(layer_heatmaps_blank, dim=0), torch.stack(
+        layer_heatmaps_my, dim=0
+    )
+
+
+def calculate_heatmaps_for_layer(
+    model, layer_index: int, focus_cache, blank_probe_normalised, my_probe_normalised
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    neurons = (
+        to_device(focus_cache["post", layer_index][:, 3:-3])
+        .std(dim=[0, 1])
+        .argsort(descending=True)
+    )
+
+    w_outs = [neuron_probe(model, layer_index, neuron) for neuron in neurons]
+    heatmaps_blank = torch.stack(
+        [
+            (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
+            for w_out in w_outs
+        ],
+        dim=0,
+    )
+    heatmaps_my = torch.stack(
+        [(w_out[:, None, None] * my_probe_normalised).sum(dim=0) for w_out in w_outs],
+        dim=0,
+    )
+    return heatmaps_blank, heatmaps_my
+
+
+def generate_neuron_pages(
+    layer_index: int, heatmaps_blank: torch.Tensor, heatmaps_my: torch.Tensor
+):
+    """Generates pages for all neurons based on precomputed heatmaps.
 
     Parameters
     ----------
@@ -213,27 +257,17 @@ def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_norm
     None
     """
 
-    neurons = (
-        to_device(focus_cache["post", layer][:, 3:-3])
-        .std(dim=[0, 1])
-        .argsort(descending=True)
-    )
+    generate_neuron_pages_for_layer(heatmaps_blank, heatmaps_my, layer_index)
 
-    w_outs = [neuron_probe(model, layer, neuron) for neuron in neurons]
-    heatmaps_blank = [
-        (w_out[:, None, None] * blank_probe_normalised).sum(dim=0) for w_out in w_outs
-    ]
-    heatmaps_my = [
-        (w_out[:, None, None] * my_probe_normalised).sum(dim=0) for w_out in w_outs
-    ]
 
+def generate_neuron_pages_for_layer(heatmaps_blank, heatmaps_my, layer_index):
     for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
         zip(heatmaps_blank, heatmaps_my)
     ):
-        generate_page(layer, neuron_index, heatmap_blank, heatmap_my)
+        generate_neuron_page(layer_index, neuron_index, heatmap_blank, heatmap_my)
 
 
-def generate_page(
+def generate_neuron_page(
     layer, neuron_index: int, heatmap_blank: torch.Tensor, heatmap_my: torch.Tensor
 ):
     """Generate a page."""
@@ -507,14 +541,20 @@ def main():
         (w_out @ probe_space_basis).norm().item() ** 2,
     )
 
-    for layer in range(8):
-        print(f"Layer {layer} converted")
-        layer_probe(
-            model,
-            layer,
-            focus_cache,
-            blank_probe_normalised,
-            my_probe_normalised,
+    # Calculate all heatmaps
+    heatmaps_blank, heatmaps_my = calculate_heatmaps(
+        model, 8, focus_cache, blank_probe_normalised, my_probe_normalised
+    )
+
+    # Generate file for each neuron.
+    for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
+    ):
+        print(f"Layer {layer_index} converted")
+        generate_neuron_pages(
+            layer_index,
+            heatmaps_blank,
+            heatmaps_my,
         )
 
 
