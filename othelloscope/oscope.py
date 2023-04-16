@@ -411,6 +411,41 @@ def generate_logit_attribution_table(layer, neuron, model, stoi_indices):
     return generate_activation_table([state])
 
 
+def generate_main_index(variance_sorted_neurons: list[list[int]]):
+    out_path = "othelloscope/index.html"
+
+    # Read the template file
+    file = generate_from_template(
+        "othelloscope/index_template.html",
+        ranked_neuron_table(variance_sorted_neurons),
+    )
+
+    # Write the generated file
+    with open(out_path, "w") as f:
+        f.write(file)
+
+
+def ranked_neuron_table(variance_sorted_neurons: list[list[int]]):
+    """Generate a table of ranked neurons."""
+
+    table = "<table class='neurons'>"
+    layer_header_strings = "".join(
+        [f"<th>Layer {layer_index}</th>" for layer_index in range(8)]
+    )
+    table += f"<tr><th></th>{layer_header_strings}</tr>"
+    for rank in range(len(variance_sorted_neurons[0])):
+        table += f"<tr><th>{rank}</th>"
+        table += "".join(
+            [
+                f"<td><a href='L{layer_index}/N{variance_sorted_neurons[layer_index][rank]}/index.html'>{variance_sorted_neurons[layer_index][rank]}</a></td>"
+                for layer_index in range(8)
+            ]
+        )
+        table += "</tr>"
+    table += "</table>"
+    return table
+
+
 def main():
     """Main function."""
 
@@ -627,12 +662,14 @@ def main():
     # Sort neuron indices by standard deviation
     print("Sorting neurons by standard deviation...")
     variance_ranks = []
+    variance_sorted_neurons = []
     for heatmap_my_sd in heatmaps_my_sd:
         neuron_indices_my = list(enumerate(heatmap_my_sd))
         neuron_indices_my.sort(
             reverse=True,
             key=lambda x: x[1],
         )
+        variance_sorted_neurons.append([x[0] for x in neuron_indices_my])
 
         layer_variance_ranks = np.zeros(len(neuron_indices_my), dtype=np.int32)
         for neuron_index, (rank, _) in enumerate(neuron_indices_my):
@@ -640,6 +677,8 @@ def main():
 
         assert len([x for x in layer_variance_ranks if x == 0]) == 1
         variance_ranks.append(layer_variance_ranks)
+
+    generate_main_index(variance_sorted_neurons)
 
     print("Generating neuron pages...")
     # Generate file for each neuron.
