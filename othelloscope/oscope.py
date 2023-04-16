@@ -23,6 +23,16 @@ torch.set_grad_enabled(False)
 
 import transformer_lens.utils as utils
 
+USE_CUDA: bool = torch.cuda.is_available()
+DEVICE: str = "cuda" if USE_CUDA else "cpu"
+
+
+def to_device(object):
+    if USE_CUDA:
+        return object.cuda()
+    else:
+        return object.cpu()
+
 
 def generate_from_template(template, *args):
     """Generate a file from a template.
@@ -134,7 +144,8 @@ def generate_probability_table(
     layer, game_index, move, focus_cache, linear_probe, **kwargs
 ):
     """Generate a probability table."""
-    residual_stream = focus_cache["resid_post", layer][game_index, move]
+    residual_stream = to_device(focus_cache["resid_post", layer][game_index, move])
+
     print("residual_stream", residual_stream.shape)
     probe_out = einops.einsum(
         residual_stream,
@@ -203,7 +214,9 @@ def layer_probe(model, layer, focus_cache, blank_probe_normalised, my_probe_norm
     """
 
     neurons = (
-        focus_cache["post", layer][:, 3:-3].std(dim=[0, 1]).argsort(descending=True)
+        to_device(focus_cache["post", layer][:, 3:-3])
+        .std(dim=[0, 1])
+        .argsort(descending=True)
     )
     heatmaps_blank = []
     heatmaps_my = []
@@ -230,7 +243,7 @@ def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
     template = generate_from_template(
         "othelloscope/template.html",
         (
-            f"<a href='../../L{layer}/N{neuron - 1}'>Previous neuron</a> - "
+            f"<a href='../../L{layer}/N{neuron - 1}/index.html'>Previous neuron</a> - "
             if neuron > 0
             else (
                 f"<a href='../../L{layer-1}/N{2047}'>Previous layer</a> - "
@@ -239,7 +252,7 @@ def generate_page(layer, neuron, heatmaps_blank, heatmaps_my):
             )
         )
         + (
-            f"<a href='../../L{layer}/N{neuron + 1}'>Next</a>"
+            f"<a href='../../L{layer}/N{neuron + 1}/index.html'>Next</a>"
             if neuron < 2047
             else (f"<a href='../../L{layer+1}/N0'>Next layer</a>" if layer < 7 else "")
         ),
@@ -268,7 +281,7 @@ def main():
         act_fn="gelu",
         normalization_type="LNPre",
     )
-    model = HookedTransformer(cfg)
+    model = to_device(HookedTransformer(cfg))
 
     sd = utils.download_file_from_hf(
         "NeelNanda/Othello-GPT-Transformer-Lens", "synthetic_model.pth"
@@ -344,10 +357,10 @@ def main():
     print("focus states:", focus_states.shape)
     print("focus_valid_moves", focus_valid_moves.shape)
 
-    focus_logits, focus_cache = model.run_with_cache(focus_games_int[:, :-1].cuda())
+    focus_logits, focus_cache = model.run_with_cache(to_device(focus_games_int[:, :-1]))
 
     full_linear_probe = torch.load(
-        OTHELLO_ROOT / "main_linear_probe.pth", map_location="cuda"
+        OTHELLO_ROOT / "main_linear_probe.pth", map_location=DEVICE
     )
     rows = 8
 
@@ -358,7 +371,7 @@ def main():
     blank_index = 0
     their_index = 1
     my_index = 2
-    linear_probe = torch.zeros(cfg.d_model, rows, cols, options, device="cuda")
+    linear_probe = torch.zeros(cfg.d_model, rows, cols, options, device=DEVICE)
     linear_probe[..., blank_index] = 0.5 * (
         full_linear_probe[black_to_play_index, ..., 0]
         + full_linear_probe[white_to_play_index, ..., 0]
@@ -398,26 +411,26 @@ def main():
 
     # We now convert to one hot
     focus_states_flipped_one_hot = state_stack_to_one_hot(
-        torch.tensor(flipped_focus_states).cuda()
+        to_device(torch.tensor(flipped_focus_states))
     )
 
     # Take the argmax
     focus_states_flipped_value = focus_states_flipped_one_hot.argmax(dim=-1)
     probe_out = einops.einsum(
-        focus_cache["resid_post", 6],
+        to_device(focus_cache["resid_post", 6]),
         linear_probe,
         "game move d_model, d_model row col options -> game move row col options",
     )
     probe_out_value = probe_out.argmax(dim=-1)
 
     correct_middle_odd_answers = (
-        probe_out_value.cuda() == focus_states_flipped_value[:, :-1]
+        to_device(probe_out_value) == focus_states_flipped_value[:, :-1]
     )[:, 5:-5:2]
     accuracies_odd = einops.reduce(
         correct_middle_odd_answers.float(), "game move row col -> row col", "mean"
     )
     correct_middle_answers = (
-        probe_out_value.cuda() == focus_states_flipped_value[:, :-1]
+        to_device(probe_out_value) == focus_states_flipped_value[:, :-1]
     )[:, 5:-5]
     accuracies = einops.reduce(
         correct_middle_answers.float(), "game move row col -> row col", "mean"
@@ -432,7 +445,7 @@ def main():
     pos = 20
     game_index = 0
     moves = focus_games_string[game_index, : pos + 1]
-    state = torch.zeros((64,), dtype=torch.float32, device="cuda") - 10.0
+    state = torch.zeros((64,), dtype=torch.float32, device=DEVICE) - 10.0
     state[stoi_indices] = focus_logits[game_index, pos].log_softmax(dim=-1)[1:]
     print("state:", state.shape)
 
@@ -510,7 +523,11 @@ def main():
     for layer in range(8):
         print(f"Layer {layer} converted")
         layer_probe(
-            model, layer, focus_cache, blank_probe_normalised, my_probe_normalised
+            model,
+            layer,
+            focus_cache,
+            blank_probe_normalised,
+            my_probe_normalised,
         )
 
 
