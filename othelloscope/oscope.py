@@ -239,6 +239,7 @@ def calculate_heatmap_standard_deviations(heatmaps: torch.Tensor) -> torch.Tenso
 def generate_neuron_pages(
     heatmaps_blank: torch.Tensor,
     heatmaps_my: torch.Tensor,
+    variance_ranks: list[list[int]],
     model,
     focus_cache,
     board_seqs_int,
@@ -266,13 +267,15 @@ def generate_neuron_pages(
     None
     """
 
-    for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
-        zip(heatmaps_blank, heatmaps_my)
+    for layer_index, (heatmaps_blank, heatmaps_my, layer_variance_ranks) in enumerate(
+        zip(heatmaps_blank, heatmaps_my, variance_ranks)
     ):
+        print(f"Generating pages for neurons in layer {layer_index}")
         generate_neuron_pages_for_layer(
             layer_index,
             heatmaps_blank,
             heatmaps_my,
+            layer_variance_ranks,
             model,
             focus_cache,
             board_seqs_int,
@@ -284,19 +287,20 @@ def generate_neuron_pages_for_layer(
     layer_index: int,
     heatmaps_blank: torch.Tensor,
     heatmaps_my: torch.Tensor,
+    ranks: list[int],
     model,
     focus_cache,
     board_seqs_int,
     stoi_indices,
 ):
-    for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
-        zip(heatmaps_blank, heatmaps_my)
+    for neuron_index, (heatmap_blank, heatmap_my, rank) in enumerate(
+        zip(heatmaps_blank, heatmaps_my, ranks)
     ):
         games = top_50_games(layer_index, neuron_index, focus_cache, board_seqs_int)
         generate_page(
             layer_index,
             neuron_index,
-            "TEST1",
+            str(rank),
             heatmap_blank,
             heatmap_my,
             games,
@@ -616,40 +620,33 @@ def main():
     )
 
     # Calculate heatmap standard deviations
-    heatmaps_blank_sd = calculate_heatmap_standard_deviations(heatmaps_blank)
     heatmaps_my_sd = calculate_heatmap_standard_deviations(heatmaps_my)
 
-    assert heatmaps_blank.shape == heatmaps_my.shape
-
-    print("sd shape: " + str(heatmaps_blank_sd.shape))
-
-    heatmaps_blank_sd = heatmaps_blank_sd.detach().cpu().numpy()
     heatmaps_my_sd = heatmaps_my_sd.detach().cpu().numpy()
 
     # Sort neuron indices by standard deviation
-    sd_blank_sorted_neurons = []
-    sd_my_sorted_neurons = []
-    for layer_index, (heatmap_blank_sd, heatmap_my_sd) in enumerate(
-        zip(heatmaps_blank_sd, heatmaps_my_sd)
-    ):
-        neuron_indices_blank = list(range(8))
-        neuron_indices_blank.sort(
-            reverse=True,
-            key=lambda neuron_index: heatmap_blank_sd[neuron_index].item(),
-        )
-        sd_blank_sorted_neurons.append(neuron_indices_blank)
-
-        neuron_indices_my = list(range(8))
+    print("Sorting neurons by standard deviation...")
+    variance_ranks = []
+    for heatmap_my_sd in heatmaps_my_sd:
+        neuron_indices_my = list(enumerate(heatmap_my_sd))
         neuron_indices_my.sort(
             reverse=True,
-            key=lambda neuron_index: heatmap_my_sd[neuron_index].item(),
+            key=lambda x: x[1],
         )
-        sd_my_sorted_neurons.append(neuron_indices_my)
 
+        layer_variance_ranks = np.zeros(len(neuron_indices_my), dtype=np.int32)
+        for neuron_index, (rank, _) in enumerate(neuron_indices_my):
+            layer_variance_ranks[neuron_index] = rank
+
+        assert len([x for x in layer_variance_ranks if x == 0]) == 1
+        variance_ranks.append(layer_variance_ranks)
+
+    print("Generating neuron pages...")
     # Generate file for each neuron.
     generate_neuron_pages(
         heatmaps_blank,
         heatmaps_my,
+        variance_ranks,
         model,
         focus_cache,
         board_seqs_int,
