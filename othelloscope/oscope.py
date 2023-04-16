@@ -24,6 +24,19 @@ torch.set_grad_enabled(False)
 
 import transformer_lens.utils as utils
 
+OTHELLO_ROOT = Path(".")
+# Import othello util functions from file mechanistic_interpretability/mech_interp_othello_utils.py
+sys.path.append(str(OTHELLO_ROOT))
+sys.path.append(str(OTHELLO_ROOT / "mechanistic_interpretability"))
+from mech_interp_othello_utils import (
+    plot_single_board,
+    to_string,
+    to_int,
+    int_to_label,
+    string_to_label,
+    OthelloBoardState,
+)
+
 USE_CUDA: bool = torch.cuda.is_available()
 DEVICE: str = "cuda" if USE_CUDA else "cpu"
 
@@ -55,24 +68,6 @@ def generate_from_template(template, *args):
     return template.format(*args)
 
 
-def get_neuron_at_layer(layer, neuron):
-    """Get the neuron at a specific layer.
-
-    Parameters
-    ----------
-    layer : int
-        The layer of the neuron.
-    neuron : int
-        The index of the neuron.
-
-    Returns
-    -------
-    str
-        The neuron at the layer.
-    """
-    return "layer_{}_neuron_{}".format(layer, neuron)
-
-
 def generate_neuron_path(layer, neuron):
     """Generate the path to the neuron.
 
@@ -88,7 +83,7 @@ def generate_neuron_path(layer, neuron):
     str
         The path to the neuron.
     """
-    return "othelloscope/L{}/N{}".format(layer, neuron)
+    return "othelloscope/L{0}/N{1}".format(layer, neuron)
 
 
 def generate_activation_table(heatmap: torch.Tensor) -> str:
@@ -107,7 +102,10 @@ def generate_activation_table(heatmap: torch.Tensor) -> str:
         The generated activation table.
     """
     # Convert heatmap to numpy array
-    heatmap = np.array(heatmap.detach().cpu())
+    if isinstance(heatmap, torch.Tensor):
+        heatmap = np.array(heatmap.detach().cpu())
+    else:
+        heatmap = np.array(heatmap[0].detach().cpu())
     othello_board = np.array(
         [
             ["A", "B", "C", "D", "E", "F", "G", "H"],
@@ -239,11 +237,12 @@ def calculate_heatmap_standard_deviations(heatmaps: torch.Tensor) -> torch.Tenso
 
 
 def generate_neuron_pages(
-    layer_index: int,
     heatmaps_blank: torch.Tensor,
     heatmaps_my: torch.Tensor,
-    heatmaps_blank_sd: torch.Tensor,
-    heatmaps_my_sd: torch.Tensor,
+    model,
+    focus_cache,
+    board_seqs_int,
+    stoi_indices,
 ):
     """Generates pages for all neurons based on precomputed heatmaps.
 
@@ -259,39 +258,62 @@ def generate_neuron_pages(
         The normalised blank probe.
     my_probe_normalised : torch.Tensor
         The normalised my probe.
+    stoi_indices : range
+        The stoi indices.
 
     Returns
     -------
     None
     """
 
-    generate_neuron_pages_for_layer(
-        layer_index, heatmaps_blank, heatmaps_my, heatmaps_blank_sd, heatmaps_my_sd
-    )
+    for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
+    ):
+        generate_neuron_pages_for_layer(
+            layer_index,
+            heatmaps_blank,
+            heatmaps_my,
+            model,
+            focus_cache,
+            board_seqs_int,
+            stoi_indices,
+        )
 
 
 def generate_neuron_pages_for_layer(
     layer_index: int,
     heatmaps_blank: torch.Tensor,
     heatmaps_my: torch.Tensor,
-    sd_blank: torch.Tensor,
-    sd_my: torch.Tensor,
+    model,
+    focus_cache,
+    board_seqs_int,
+    stoi_indices,
 ):
-    for neuron_index, (heatmap_blank, heatmap_my, sd_blank, sd_my) in enumerate(
-        zip(heatmaps_blank, heatmaps_my, sd_blank, sd_my)
+    for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
     ):
-        generate_neuron_page(
-            layer_index, neuron_index, heatmap_blank, heatmap_my, sd_blank, sd_my
+        games = top_50_games(layer_index, neuron_index, focus_cache, board_seqs_int)
+        generate_page(
+            layer_index,
+            neuron_index,
+            "TEST1",
+            heatmap_blank,
+            heatmap_my,
+            games,
+            model,
+            stoi_indices,
         )
 
 
-def generate_neuron_page(
-    layer_index: int,
-    neuron_index: int,
-    heatmap_blank: torch.Tensor,
-    heatmap_my: torch.Tensor,
-    sd_blank: float,
-    sd_my: float,
+def generate_page(
+    layer_index,
+    neuron_index,
+    rank,
+    heatmap_blank,
+    heatmap_my,
+    games,
+    model,
+    stoi_indices,
 ):
     """Generate a page."""
 
@@ -325,15 +347,64 @@ def generate_neuron_page(
         ),
         layer_index,
         neuron_index,
+        rank,
         generate_activation_table(heatmap_blank),
         generate_activation_table(heatmap_my),
-        sd_blank,
-        sd_my,
+        generate_logit_attribution_table(
+            layer_index, neuron_index, model, stoi_indices
+        ),
+        games,
     )
 
     # Write the generated file
     with open(path + "/index.html", "w") as f:
         f.write(template)
+
+
+def top_50_games(layer, neuron, focus_cache, board_seqs_int):
+    """Takes top 50 games and visualizes them in a grid with visualization of the board state when hovering along with the neuron activation for that specific game."""
+    neuron_acts = focus_cache["post", layer, "mlp"][:, :, neuron]
+    num_games = 50
+    focus_games_int = board_seqs_int[:num_games]
+
+    # Generate a table where y = game, x = move, and the value is the move from focus_games_string
+    moves = []
+    for game in focus_games_int:
+        moves.append([int_to_label(move) for move in game])
+
+    # Return HTML table with the title = activation of the neuron
+    # Create a table
+    table = "<table class='games'>"
+
+    # Loop through the rows
+    table += "<tr><td class='game_step_id'></td>"
+    for col in range(neuron_acts.shape[1] + 1):
+        table += "<td class='game_step_id'>{0}</td>".format(col + 1)
+    table += "</tr>"
+    for row in range(neuron_acts.shape[0]):
+        table += "<tr>"
+        table += "<td class='game_id'>{0}</td>".format(row + 1)
+
+        # Loop through the columns
+        for col in range(neuron_acts.shape[1]):
+            table += "<td class='game_step' title={0}>{1}</td>".format(
+                neuron_acts[row, col], moves[row][col]
+            )
+
+        table += "</tr>"
+
+    table += "</table>"
+
+    return table
+
+
+def generate_logit_attribution_table(layer, neuron, model, stoi_indices):
+    """Generate a logit attribution table."""
+    w_out = model.blocks[layer].mlp.W_out[neuron, :]
+    state = torch.zeros(8, 8, device="cpu")
+    state.flatten()[stoi_indices] = w_out @ model.W_U[:, 1:]
+    state.reshape(8, 8)
+    return generate_activation_table([state])
 
 
 def main():
@@ -356,19 +427,6 @@ def main():
         "NeelNanda/Othello-GPT-Transformer-Lens", "synthetic_model.pth"
     )
     model.load_state_dict(sd)
-
-    OTHELLO_ROOT = Path(".")
-    # Import othello util functions from file mechanistic_interpretability/mech_interp_othello_utils.py
-    sys.path.append(str(OTHELLO_ROOT))
-    sys.path.append(str(OTHELLO_ROOT / "mechanistic_interpretability"))
-    from mech_interp_othello_utils import (
-        plot_single_board,
-        to_string,
-        to_int,
-        int_to_label,
-        string_to_label,
-        OthelloBoardState,
-    )
 
     board_seqs_int = torch.tensor(
         np.load(OTHELLO_ROOT / "board_seqs_int_small.npy"), dtype=torch.long
@@ -589,20 +647,14 @@ def main():
         sd_my_sorted_neurons.append(neuron_indices_my)
 
     # Generate file for each neuron.
-    for layer_index, (
+    generate_neuron_pages(
         heatmaps_blank,
         heatmaps_my,
-        heatmaps_blank_sd,
-        heatmaps_my_sd,
-    ) in enumerate(zip(heatmaps_blank, heatmaps_my, heatmaps_blank_sd, heatmaps_my_sd)):
-        print(f"Layer {layer_index} converted")
-        generate_neuron_pages(
-            layer_index,
-            heatmaps_blank,
-            heatmaps_my,
-            heatmaps_blank_sd,
-            heatmaps_my_sd,
-        )
+        model,
+        focus_cache,
+        board_seqs_int,
+        stoi_indices,
+    )
 
 
 # Make an 8x8 html table from a numpy array

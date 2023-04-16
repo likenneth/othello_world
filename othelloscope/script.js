@@ -1,4 +1,10 @@
+// Get all table cells
 var allTableCells = document.getElementsByTagName("td");
+
+// Filter for the ones that have a title attribute
+allTableCells = Array.prototype.filter.call(allTableCells, function (node) {
+  return node.hasAttribute("title");
+});
 
 for (var i = 0, max = allTableCells.length; i < max; i++) {
   var node = allTableCells[i];
