@@ -234,8 +234,16 @@ def calculate_heatmaps_for_layer(
     return heatmaps_blank, heatmaps_my
 
 
+def calculate_heatmap_standard_deviations(heatmaps: torch.Tensor) -> torch.Tensor:
+    return heatmaps.std(dim=(2, 3))
+
+
 def generate_neuron_pages(
-    layer_index: int, heatmaps_blank: torch.Tensor, heatmaps_my: torch.Tensor
+    layer_index: int,
+    heatmaps_blank: torch.Tensor,
+    heatmaps_my: torch.Tensor,
+    heatmaps_blank_sd: torch.Tensor,
+    heatmaps_my_sd: torch.Tensor,
 ):
     """Generates pages for all neurons based on precomputed heatmaps.
 
@@ -257,23 +265,38 @@ def generate_neuron_pages(
     None
     """
 
-    generate_neuron_pages_for_layer(heatmaps_blank, heatmaps_my, layer_index)
+    generate_neuron_pages_for_layer(
+        layer_index, heatmaps_blank, heatmaps_my, heatmaps_blank_sd, heatmaps_my_sd
+    )
 
 
-def generate_neuron_pages_for_layer(heatmaps_blank, heatmaps_my, layer_index):
-    for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
-        zip(heatmaps_blank, heatmaps_my)
+def generate_neuron_pages_for_layer(
+    layer_index: int,
+    heatmaps_blank: torch.Tensor,
+    heatmaps_my: torch.Tensor,
+    sd_blank: torch.Tensor,
+    sd_my: torch.Tensor,
+):
+    for neuron_index, (heatmap_blank, heatmap_my, sd_blank, sd_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my, sd_blank, sd_my)
     ):
-        generate_neuron_page(layer_index, neuron_index, heatmap_blank, heatmap_my)
+        generate_neuron_page(
+            layer_index, neuron_index, heatmap_blank, heatmap_my, sd_blank, sd_my
+        )
 
 
 def generate_neuron_page(
-    layer, neuron_index: int, heatmap_blank: torch.Tensor, heatmap_my: torch.Tensor
+    layer_index: int,
+    neuron_index: int,
+    heatmap_blank: torch.Tensor,
+    heatmap_my: torch.Tensor,
+    sd_blank: float,
+    sd_my: float,
 ):
     """Generate a page."""
 
     # Get the path to the neuron
-    path = generate_neuron_path(layer, neuron_index)
+    path = generate_neuron_path(layer_index, neuron_index)
 
     # Create a folder if it doesn't exist
     if not os.path.exists(path):
@@ -283,46 +306,34 @@ def generate_neuron_page(
     template = generate_from_template(
         "othelloscope/template.html",
         (
-            f"<a href='../../L{layer}/N{neuron_index - 1}/index.html'>Previous neuron</a> - "
+            f"<a href='../../L{layer_index}/N{neuron_index - 1}/index.html'>Previous neuron</a> - "
             if neuron_index > 0
             else (
-                f"<a href='../../L{layer-1}/N{2047}'>Previous layer</a> - "
-                if layer > 0
+                f"<a href='../../L{layer_index-1}/N{2047}'>Previous layer</a> - "
+                if layer_index > 0
                 else ""
             )
         )
         + (
-            f"<a href='../../L{layer}/N{neuron_index + 1}/index.html'>Next</a>"
+            f"<a href='../../L{layer_index}/N{neuron_index + 1}/index.html'>Next</a>"
             if neuron_index < 2047
-            else (f"<a href='../../L{layer+1}/N0'>Next layer</a>" if layer < 7 else "")
+            else (
+                f"<a href='../../L{layer_index+1}/N0'>Next layer</a>"
+                if layer_index < 7
+                else ""
+            )
         ),
-        layer,
+        layer_index,
         neuron_index,
         generate_activation_table(heatmap_blank),
         generate_activation_table(heatmap_my),
-        tensor_variance(heatmap_blank),
-        tensor_variance(heatmap_my),
+        sd_blank,
+        sd_my,
     )
 
     # Write the generated file
     with open(path + "/index.html", "w") as f:
         f.write(template)
-
-
-def tensor_variance(tensor: torch.Tensor) -> float:
-    """Calculate the variance of the values in the tensor.
-
-    Parameters
-    ----------
-    tensor : torch.Tensor
-        The tensor.
-
-    Returns
-    -------
-    float
-        The variance.
-    """
-    return torch.mean((tensor - torch.mean(tensor)) ** 2)
 
 
 def main():
@@ -546,15 +557,23 @@ def main():
         model, 8, focus_cache, blank_probe_normalised, my_probe_normalised
     )
 
+    heatmaps_blank_sd = calculate_heatmap_standard_deviations(heatmaps_blank)
+    heatmaps_my_sd = calculate_heatmap_standard_deviations(heatmaps_my)
+
     # Generate file for each neuron.
-    for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
-        zip(heatmaps_blank, heatmaps_my)
-    ):
+    for layer_index, (
+        heatmaps_blank,
+        heatmaps_my,
+        heatmaps_blank_sd,
+        heatmaps_my_sd,
+    ) in enumerate(zip(heatmaps_blank, heatmaps_my, heatmaps_blank_sd, heatmaps_my_sd)):
         print(f"Layer {layer_index} converted")
         generate_neuron_pages(
             layer_index,
             heatmaps_blank,
             heatmaps_my,
+            heatmaps_blank_sd,
+            heatmaps_my_sd,
         )
 
 
