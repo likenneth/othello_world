@@ -1,6 +1,7 @@
 # Import libraries for reading and writing files
 import os
 import sys
+from typing import Tuple
 
 # Import libraries for image processing
 import numpy as np
@@ -85,7 +86,7 @@ def generate_neuron_path(layer, neuron):
     return "othelloscope/L{0}/N{1}".format(layer, neuron)
 
 
-def generate_activation_table(heatmap):
+def generate_activation_table(heatmap: torch.Tensor) -> str:
     """Generate an activation table.
 
     Parameters
@@ -101,7 +102,10 @@ def generate_activation_table(heatmap):
         The generated activation table.
     """
     # Convert heatmap to numpy array
-    heatmap = np.array(heatmap[-1].detach().cpu())
+    if isinstance(heatmap, torch.Tensor):
+        heatmap = np.array(heatmap.detach().cpu())
+    else:
+        heatmap = np.array(heatmap[0].detach().cpu())
     othello_board = np.array(
         [
             ["A", "B", "C", "D", "E", "F", "G", "H"],
@@ -187,17 +191,60 @@ def neuron_probe(model, layer, neuron):
     return w_out
 
 
-def layer_probe(
+def calculate_heatmaps(
+    model, num_layers: int, focus_cache, blank_probe_normalised, my_probe_normalised
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    layer_heatmaps_blank = []
+    layer_heatmaps_my = []
+    for layer in range(num_layers):
+        heatmaps_blank, heatmaps_my = calculate_heatmaps_for_layer(
+            model, layer, focus_cache, blank_probe_normalised, my_probe_normalised
+        )
+        layer_heatmaps_blank.append(heatmaps_blank)
+        layer_heatmaps_my.append(heatmaps_my)
+
+    return torch.stack(layer_heatmaps_blank, dim=0), torch.stack(
+        layer_heatmaps_my, dim=0
+    )
+
+
+def calculate_heatmaps_for_layer(
+    model, layer_index: int, focus_cache, blank_probe_normalised, my_probe_normalised
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    neurons = (
+        to_device(focus_cache["post", layer_index][:, 3:-3])
+        .std(dim=[0, 1])
+        .argsort(descending=True)
+    )
+
+    w_outs = [neuron_probe(model, layer_index, neuron) for neuron in neurons]
+    heatmaps_blank = torch.stack(
+        [
+            (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
+            for w_out in w_outs
+        ],
+        dim=0,
+    )
+    heatmaps_my = torch.stack(
+        [(w_out[:, None, None] * my_probe_normalised).sum(dim=0) for w_out in w_outs],
+        dim=0,
+    )
+    return heatmaps_blank, heatmaps_my
+
+
+def calculate_heatmap_standard_deviations(heatmaps: torch.Tensor) -> torch.Tensor:
+    return heatmaps.std(dim=(2, 3))
+
+
+def generate_neuron_pages(
+    heatmaps_blank: torch.Tensor,
+    heatmaps_my: torch.Tensor,
     model,
-    layer,
     focus_cache,
-    blank_probe_normalised,
-    my_probe_normalised,
-    stoi_indices,
     board_seqs_int,
-    board_seqs_string,
+    stoi_indices,
 ):
-    """Generate a layer probe, all the heatmaps, and the page.
+    """Generates pages for all neurons based on precomputed heatmaps.
 
     Parameters
     ----------
@@ -219,34 +266,59 @@ def layer_probe(
     None
     """
 
-    neurons = (
-        to_device(focus_cache["post", layer][:, 3:-3])
-        .std(dim=[0, 1])
-        .argsort(descending=True)
-    )
-    heatmaps_blank = []
-    heatmaps_my = []
-    for idx, neuron in enumerate(neurons):
-        w_out = neuron_probe(model, layer, neuron)
-        heatmaps_blank.append(
-            (w_out[:, None, None] * blank_probe_normalised).sum(dim=0)
+    for layer_index, (heatmaps_blank, heatmaps_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
+    ):
+        generate_neuron_pages_for_layer(
+            layer_index,
+            heatmaps_blank,
+            heatmaps_my,
+            model,
+            focus_cache,
+            board_seqs_int,
+            stoi_indices,
         )
-        heatmaps_my.append((w_out[:, None, None] * my_probe_normalised).sum(dim=0))
-        games = top_50_games(
-            layer, neuron, focus_cache, board_seqs_int, board_seqs_string
-        )
+
+
+def generate_neuron_pages_for_layer(
+    layer_index: int,
+    heatmaps_blank: torch.Tensor,
+    heatmaps_my: torch.Tensor,
+    model,
+    focus_cache,
+    board_seqs_int,
+    stoi_indices,
+):
+    for neuron_index, (heatmap_blank, heatmap_my) in enumerate(
+        zip(heatmaps_blank, heatmaps_my)
+    ):
+        games = top_50_games(layer_index, neuron_index, focus_cache, board_seqs_int)
         generate_page(
-            layer, idx, "TEST1", heatmaps_blank, heatmaps_my, games, model, stoi_indices
+            layer_index,
+            neuron_index,
+            "TEST1",
+            heatmap_blank,
+            heatmap_my,
+            games,
+            model,
+            stoi_indices,
         )
 
 
 def generate_page(
-    layer, neuron, rank, heatmaps_blank, heatmaps_my, games, model, stoi_indices
+    layer_index,
+    neuron_index,
+    rank,
+    heatmap_blank,
+    heatmap_my,
+    games,
+    model,
+    stoi_indices,
 ):
     """Generate a page."""
 
     # Get the path to the neuron
-    path = generate_neuron_path(layer, neuron)
+    path = generate_neuron_path(layer_index, neuron_index)
 
     # Create a folder if it doesn't exist
     if not os.path.exists(path):
@@ -256,25 +328,31 @@ def generate_page(
     template = generate_from_template(
         "othelloscope/template.html",
         (
-            f"<a href='../../L{layer}/N{neuron - 1}/index.html'>Previous neuron</a> - "
-            if neuron > 0
+            f"<a href='../../L{layer_index}/N{neuron_index - 1}/index.html'>Previous neuron</a> - "
+            if neuron_index > 0
             else (
-                f"<a href='../../L{layer-1}/N{2047}'>Previous layer</a> - "
-                if layer > 0
+                f"<a href='../../L{layer_index-1}/N{2047}'>Previous layer</a> - "
+                if layer_index > 0
                 else ""
             )
         )
         + (
-            f"<a href='../../L{layer}/N{neuron + 1}/index.html'>Next</a>"
-            if neuron < 2047
-            else (f"<a href='../../L{layer+1}/N0'>Next layer</a>" if layer < 7 else "")
+            f"<a href='../../L{layer_index}/N{neuron_index + 1}/index.html'>Next</a>"
+            if neuron_index < 2047
+            else (
+                f"<a href='../../L{layer_index+1}/N0'>Next layer</a>"
+                if layer_index < 7
+                else ""
+            )
         ),
-        layer,
-        neuron,
+        layer_index,
+        neuron_index,
         rank,
-        generate_activation_table(heatmaps_blank),
-        generate_activation_table(heatmaps_my),
-        generate_logit_attribution_table(layer, neuron, model, stoi_indices),
+        generate_activation_table(heatmap_blank),
+        generate_activation_table(heatmap_my),
+        generate_logit_attribution_table(
+            layer_index, neuron_index, model, stoi_indices
+        ),
         games,
     )
 
@@ -283,12 +361,11 @@ def generate_page(
         f.write(template)
 
 
-def top_50_games(layer, neuron, focus_cache, board_seqs_int, board_seqs_string):
+def top_50_games(layer, neuron, focus_cache, board_seqs_int):
     """Takes top 50 games and visualizes them in a grid with visualization of the board state when hovering along with the neuron activation for that specific game."""
     neuron_acts = focus_cache["post", layer, "mlp"][:, :, neuron]
     num_games = 50
     focus_games_int = board_seqs_int[:num_games]
-    focus_games_string = board_seqs_string[:num_games]
 
     # Generate a table where y = game, x = move, and the value is the move from focus_games_string
     moves = []
@@ -533,18 +610,23 @@ def main():
         (w_out @ probe_space_basis).norm().item() ** 2,
     )
 
-    for layer in range(8):
-        print(f"Layer {layer} converted")
-        layer_probe(
-            model,
-            layer,
-            focus_cache,
-            blank_probe_normalised,
-            my_probe_normalised,
-            stoi_indices,
-            board_seqs_int,
-            board_seqs_string,
-        )
+    # Calculate all heatmaps
+    heatmaps_blank, heatmaps_my = calculate_heatmaps(
+        model, 8, focus_cache, blank_probe_normalised, my_probe_normalised
+    )
+
+    heatmaps_blank_sd = calculate_heatmap_standard_deviations(heatmaps_blank)
+    heatmaps_my_sd = calculate_heatmap_standard_deviations(heatmaps_my)
+
+    # Generate file for each neuron.
+    generate_neuron_pages(
+        heatmaps_blank,
+        heatmaps_my,
+        model,
+        focus_cache,
+        board_seqs_int,
+        stoi_indices,
+    )
 
 
 # Make an 8x8 html table from a numpy array

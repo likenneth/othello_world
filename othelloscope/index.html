@@ -1,47 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>OthelloScope</title>
-    <link rel="stylesheet" type="text/css" href="style.css"></style>
-  </head>
-  <body>
-    <h1>Welcome to the OthelloScope!</h1>
-    <p>
-      Investigate neurons in the MLP layers of the Othello-GPT model by
-      visualizing the examples where neurons Based on the original idea of the
-      <a href="https://neuroscope.io/gelu-3l/0/314.html">Neuroscope</a> by Neel
-      Nanda. See the original model <a href="https://github.com/likenneth/othello_world">here</a>.
-    </p>
 
-    <div id="layers">
+<head>
+  <meta charset="UTF-8" />
+  <title>OthelloScope</title>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  </style>
+</head>
 
-    </div>
-    <script src="script.js"></script>
-    <script>
-      const layers = [0, 1, 2, 3, 4, 5, 6, 7];
-      const layerNeurons = [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048];
+<body>
+  <h1>Welcome to the OthelloScope!</h1>
+  <p>
+    Investigate neurons in the MLP layers of the Othello-GPT model by
+    visualizing the examples where neurons Based on the original idea of the
+    <a href="https://neuroscope.io/gelu-3l/0/314.html">Neuroscope</a> by Neel
+    Nanda. See the original model <a href="https://github.com/likenneth/othello_world">here</a>.
+  </p>
 
-      // Replace the #layers content with layers foldout sections with links to all neurons
-      const layersDiv = document.getElementById("layers");
-      layersDiv.innerHTML = layers
-        .map(
-          (layer, i) =>
-            `<details>
+  <div id="layers">
+
+  </div>
+  <script src="script.js"></script>
+  <script>
+    const layers = [0, 1, 2, 3, 4, 5, 6, 7];
+    const layerNeurons = [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048];
+
+    // Replace the #layers content with layers foldout sections with links to all neurons
+    const layersDiv = document.getElementById("layers");
+    layersDiv.innerHTML = layers
+      .map(
+        (layer, i) =>
+          `<details>
           <summary>Layer ${layer}</summary>
           <div class="columns">
             ${Array.from(Array(layerNeurons[i]).keys())
-              .map(
-                (neuron) =>
-                  `<div class="column">
-                <a href="L${layer}/N${neuron}">Neuron ${neuron}</a>
+            .map(
+              (neuron) =>
+                `<div class="column">
+                <a href="L${layer}/N${neuron}/index.html">Neuron ${neuron}</a>
               </div>`
-              )
-              .join("")}
+            )
+            .join("")}
           </div>
         </details>`
-        )
-        .join("");
-    </script>
-  </body>
+      )
+      .join("");
+  </script>
+</body>
+
 </html>
