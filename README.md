@@ -1,6 +1,6 @@
 ### Update 02/13/2023 :fire::fire::fire:
 
-Neel Nanda just released a [TransformerLens](https://github.com/neelnanda-io/TransformerLens) version of Othello-GPT ([Colab](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Othello_GPT.ipynb), [Repo Notebook](https://github.com/neelnanda-io/TransformerLens/blob/main/demos/Othello_GPT.ipynb)), boosting the mechanistic interpretability research of it.
+Neel Nanda just released a [TransformerLens](https://github.com/neelnanda-io/TransformerLens) version of Othello-GPT ([Colab](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Othello_GPT.ipynb), [Repo Notebook](https://github.com/neelnanda-io/TransformerLens/blob/main/demos/Othello_GPT.ipynb)), boosting the mechanistic interpretability research of it. Based on his work, a tool was made to inspect each MLP neuron in Othello-GPT, e.g. see the differing activation for [neuron 255 in layer 3](https://kran.ai/othelloscope/L2/N255) and [neuron 250 in layer 8](https://kran.ai/othelloscope/L7/N250).
 
 # Othello World
 
