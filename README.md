@@ -45,7 +45,7 @@ Checkpoints will be saved to `ckpts/battery_othello` or can be alternatively dow
 
 ## Intervening Othello-GPT
 
-See `intervening_probe_interact_column.ipynb` for the intervention experiment, where we can customize (1) which model to intervene on, (2) the pre-intervention board state (3) which square(s) to intervene.
+See `intervening_probe_interact_column.ipynb` for the intervention experiment, where we can customize (1) which model to intervene on, (2) the pre-intervention board state (3) which square(s) to intervene on.
 
 ## Attribution via Intervention Plots
 
