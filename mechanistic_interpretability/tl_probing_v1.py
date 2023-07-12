@@ -1,8 +1,11 @@
-# %%
-from tl_othello_utils import *
-# %%
-# %%
 import transformer_lens.utils as utils
+from transformer_lens import HookedTransformer, HookedTransformerConfig
+from mech_interp_othello_utils import OthelloBoardState
+import einops
+import torch
+from tqdm import tqdm
+import numpy as np
+from fancy_einsum import einsum
 
 cfg = HookedTransformerConfig(
     n_layers=8,
@@ -23,14 +26,10 @@ sd = utils.download_file_from_hf(
 )
 # champion_ship_sd = utils.download_file_from_hf("NeelNanda/Othello-GPT-Transformer-Lens", "championship_model.pth")
 model.load_state_dict(sd)
-# %%
-plot_single_board(["D2", "C4"])
-plot_board_log_probs(to_string(["D2", "C4"]), model(torch.tensor(to_int(["D2", "C4"]))))
-plot_board(["D2", "C4"])
 
 # %%
-board_seqs_int = torch.load("board_seqs_int.pth")
-board_seqs_string = torch.load("board_seqs_string.pth")
+board_seqs_int = torch.tensor(np.load("board_seqs_int_small.npy")).long()
+board_seqs_string = torch.tensor(np.load("board_seqs_string_small.npy"))
 # %%
 def seq_to_state_stack(str_moves):
     if isinstance(str_moves, torch.Tensor):
@@ -62,7 +61,7 @@ options = 3
 rows = 8
 cols = 8
 num_epochs = 2
-num_games = 4500000
+num_games = 100000
 x = 0
 y = 2
 probe_name = "main_linear_probe"
@@ -97,9 +96,7 @@ linear_probe = torch.randn(
 linear_probe.requires_grad = True
 optimiser = torch.optim.AdamW([linear_probe], lr=lr, betas=(0.9, 0.99), weight_decay=wd)
 
-# %%
-wandb.init(project="othello", name="linear-probe")
-# %%
+
 for epoch in range(num_epochs):
     full_train_indices = torch.randperm(num_games)
     for i in tqdm(range(0, num_games, batch_size)):
